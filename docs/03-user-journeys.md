@@ -120,7 +120,7 @@ flowchart TD
 
 ---
 
-## Journey 3: Marketing manager / agency (Diffrent-style, productised)
+## Journey 3: Marketing manager / agency (Different-style AI demand gen)
 
 **Persona:** Meera, who runs 10 client workspaces.
 

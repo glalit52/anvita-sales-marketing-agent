@@ -7,7 +7,7 @@ customer record.
 
 It is inspired by:
 - [Origami](https://origami.chat): AI agents that build lead lists from plain-English prompts
-- [Diffrent](https://www.diffrent.ai): AI-augmented performance marketing, SEO & automation agency
+- [Different](https://www.different.ai): AI marketing system that runs B2B demand gen (ads, email, landing pages, AEO)
 - [Podium](https://www.podium.com): AI Employee, unified inbox, reviews, payments for local businesses
 
 ## Product & architecture docs

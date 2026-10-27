@@ -1,9 +1,9 @@
 # 02 — Anvita Feature Catalog
 
-This catalog merges every feature from Origami, Diffrent and Podium (see
+This catalog merges every feature from Origami, Different and Podium (see
 [01-competitive-analysis.md](01-competitive-analysis.md)) into one product, grouped into **9 modules**.
 Priority: **P0** = MVP, **P1** = next, **P2** = later. The source column shows which competitor
-inspired each feature (O = Origami, D = Diffrent, P = Podium, ★ = Anvita original).
+inspired each feature (O = Origami, D = Different, P = Podium, ★ = Anvita original).
 
 ## M1. Workspace & onboarding
 | # | Feature | Pri | Src |
@@ -45,7 +45,11 @@ inspired each feature (O = Origami, D = Diffrent, P = Podium, ★ = Anvita origi
 | 4.3 | **SEO & content agent:** keyword research → content calendar → brief → draft → publish (WordPress/Webflow) | P2 | D |
 | 4.4 | **Ads co-pilot:** connect Google Ads / Meta. Get AI insights, budget-shift suggestions and ad-copy generation. Approve before changes go live. | P2 | D |
 | 4.5 | Social post generator + scheduler (Instagram, Facebook, LinkedIn, GBP posts) | P2 | D |
-| 4.6 | Landing-page / lead-form builder with UTM capture | P2 | D |
+| 4.6 | AI landing-page generator + lead-form builder with UTM capture | P2 | D |
+| 4.7 | **Campaign planner:** goal → audience → channels → budget → assets, generated from a shared strategy & brand memory | P1 | D |
+| 4.8 | **Answer-engine optimisation (AEO):** track and improve how the business appears in ChatGPT / Perplexity / Google AI answers | P2 | D |
+| 4.9 | Approval queue for every AI-generated asset and spend change, with audit log and revert | P1 | D |
+| 4.10 | Cross-channel optimisation: learnings from one channel (winning offer, audience) applied to the others | P2 | D |
 
 ## M5. Conversations (engage, inbound)
 | # | Feature | Pri | Src |
@@ -95,7 +99,7 @@ inspired each feature (O = Origami, D = Diffrent, P = Podium, ★ = Anvita origi
 | 9.2 | Public REST API + webhooks | P1 | O |
 | 9.3 | Workflow builder (trigger → condition → action), no-code | P1 | D |
 | 9.4 | Audit log, data export, GDPR/DPDP deletion, consent records | P0 | ★ |
-| 9.5 | White-label / agency mode (manage many client workspaces). This is the Diffrent use case as a product. | P2 | D |
+| 9.5 | White-label / agency mode (manage many client workspaces) | P2 | ★ |
 
 ## Pricing model (suggested)
 | Plan | Who | Includes |
@@ -103,7 +107,7 @@ inspired each feature (O = Origami, D = Diffrent, P = Podium, ★ = Anvita origi
 | **Starter** | Solo / single location | Inbox, webchat, WhatsApp, AI agent (Copilot), 500 AI conversations |
 | **Growth** | SMB, multi-user | + Autopilot, booking, reviews, payments, campaigns, 2,000 AI conversations, prospecting credits |
 | **Scale** | Multi-location / B2B sales teams | + Sequences, Agent Studio, integrations, API, voice minutes |
-| **Agency** | Agencies (Diffrent-type) | White-label, client workspaces, rebilling |
+| **Agency** | Marketing agencies | White-label, client workspaces, rebilling |
 
 Usage credits cover prospecting rows, enrichment lookups, AI conversations above the quota, voice
 minutes, and WhatsApp/SMS pass-through costs.
