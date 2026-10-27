@@ -3,12 +3,12 @@ import { cn } from "@/lib/cn";
 import { initials } from "@/lib/format";
 
 const palette = [
-  "bg-[#e5f0fc] text-[#1c5cab]",
-  "bg-[#fdebe3] text-[#b4461c]",
-  "bg-[#ddf5ec] text-[#0f7a53]",
-  "bg-[#fdf1d6] text-[#8a5c00]",
-  "bg-[#fbe6ee] text-[#b13a68]",
-  "bg-[#ebe8fc] text-[#4a3aa7]",
+  "bg-[#e5f0fc] text-[#1c5cab] dark:bg-[#16273d] dark:text-[#86b6ef]",
+  "bg-[#fdebe3] text-[#b4461c] dark:bg-[#3a1d12] dark:text-[#f2a07e]",
+  "bg-[#ddf5ec] text-[#0f7a53] dark:bg-[#0f2f24] dark:text-[#5fd3a6]",
+  "bg-[#fdf1d6] text-[#8a5c00] dark:bg-[#33270a] dark:text-[#f0c35a]",
+  "bg-[#fbe6ee] text-[#b13a68] dark:bg-[#3a1626] dark:text-[#f19bbd]",
+  "bg-[#ebe8fc] text-[#4a3aa7] dark:bg-[#211c45] dark:text-[#ada3f2]",
 ];
 
 function hash(value: string) {
