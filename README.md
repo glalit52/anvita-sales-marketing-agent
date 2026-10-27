@@ -17,3 +17,11 @@ It is inspired by:
 | [02 — Feature catalog](docs/02-feature-catalog.md) | All features merged into 9 modules with priorities and pricing model |
 | [03 — User journeys](docs/03-user-journeys.md) | Personas, onboarding, inbound, outbound, marketing, human-in-the-loop journeys, metrics |
 | [04 — Technical architecture](docs/04-technical-architecture.md) | System design, stack, data model, agent runtime, prospecting engine, compliance, roadmap |
+
+## Frontend
+The full product UI lives in [`apps/web`](apps/web/README.md): Next.js 16 + Tailwind v4, with mock data and every
+module clickable (inbox, AI Agent Studio, CRM, prospecting, campaigns, marketing, analytics, settings).
+
+```bash
+cd apps/web && npm install && npm run dev
+```

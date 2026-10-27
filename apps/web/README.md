@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Anvita Web
 
-## Getting Started
+The Anvita product UI. It is a clickable frontend for every module in
+[docs/02-feature-catalog.md](../../docs/02-feature-catalog.md). There is no backend yet: all data is mock data in
+`src/lib/mock/`, and actions (sending, booking, AI streaming, drag & drop) are simulated in local state.
 
-First, run the development server:
+## Run it
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd apps/web
+npm install
+npm run dev        # http://localhost:3000
+npm run typecheck
+npm run lint
+npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Stack: Next.js 16 (App Router), React 19, Tailwind CSS v4, TypeScript, lucide-react, recharts.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Screens
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Route | What it shows |
+|---|---|
+| `/login`, `/onboarding` | Sign-in, plus the 5-step setup: website import → channels → goals → sandbox test → go live |
+| `/dashboard` | KPIs, leads & bookings trend, funnel, escalations, tasks, AI activity |
+| `/inbox` | Unified inbox across WhatsApp/SMS/email/webchat/social/calls, AI vs human handling, take over / hand back, AI suggest, notes, contact panel |
+| `/agent` | AI Agent Studio: persona, knowledge, playbooks, escalation rules, sandbox with tool-call trace, versions & QA |
+| `/contacts`, `/pipeline`, `/calendar`, `/payments` | CRM, drag-and-drop deals, appointment calendar & booking settings, pay links/invoices/payouts |
+| `/prospecting`, `/sequences`, `/campaigns` | AI lead search with streaming results, AI columns & enrichment, outbound sequences, broadcast campaigns |
+| `/marketing`, `/reviews`, `/analytics` | Ads co-pilot, SEO & social, review monitoring & requests, funnel/attribution/AI performance |
+| `/automations`, `/integrations`, `/settings` | Workflow builder, integration catalog & API keys, workspace/team/channels/billing/compliance |
 
-## Learn More
+## Code layout
 
-To learn more about Next.js, take a look at the following resources:
+```text
+src/
+├── app/(app)/<route>/page.tsx   # pages inside the app shell (sidebar + top bar)
+├── app/login, app/onboarding    # full-screen pages
+├── components/ui/               # design system: Button, Card, Badge, Modal, Drawer, Tabs, StatCard…
+├── components/charts/           # recharts wrappers that follow the data-viz rules
+├── components/shell/            # sidebar, top bar, command palette (⌘K), theme toggle
+├── components/<module>/         # module-specific pieces (sell, outbound, growth, platform)
+└── lib/mock/                    # demo workspace data ("Smile Dental", Pune + B2B agri-dealer outbound)
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Conventions
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Colors come only from the design tokens in `src/app/globals.css` (`bg-surface`, `text-muted`, `bg-primary`…).
+  That makes light/dark mode automatic: it follows the OS setting, and the top-bar toggle overrides it.
+- `cn()` merges class names with tailwind-merge, so a `className` passed to a component overrides its defaults.
+- Chart series use `--chart-1…6` in fixed order. Never use dual axes. A chart with two or more series gets a legend.
+- Modals and drawers render through a portal into `<body>`.
+- Pages that read `useSearchParams()` are wrapped in `<Suspense>`.
