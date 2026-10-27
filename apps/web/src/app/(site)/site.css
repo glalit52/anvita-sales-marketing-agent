@@ -1,0 +1,86 @@
+/* Marketing-site-only animations (the app shell never loads this file). */
+
+@keyframes site-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.site-marquee {
+  animation: site-marquee 40s linear infinite;
+}
+
+.site-marquee-wrap:hover .site-marquee {
+  animation-play-state: paused;
+}
+
+@keyframes site-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.site-float {
+  animation: site-float 5s ease-in-out infinite;
+}
+
+.site-float-delay {
+  animation: site-float 6s ease-in-out 1.2s infinite;
+}
+
+@keyframes site-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.site-pop {
+  animation: site-pop 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes site-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  80%,
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.site-ping {
+  animation: site-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.site-grid-bg {
+  background-image:
+    linear-gradient(to right, var(--line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--line) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%);
+}
+
+details.site-faq > summary {
+  list-style: none;
+}
+details.site-faq > summary::-webkit-details-marker {
+  display: none;
+}
+
+html:has(.site-root) {
+  scroll-behavior: smooth;
+}
