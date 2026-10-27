@@ -103,7 +103,7 @@ function AiStatusCard({ collapsed }: { collapsed: boolean }) {
     );
   }
   return (
-    <div className="mx-3 mb-2 rounded-xl border border-line bg-surface-2 p-3">
+    <div className="mx-3 mb-2 rounded-xl border border-line bg-surface-2 p-3 [@media(max-height:940px)]:hidden">
       <div className="flex items-center gap-2 text-xs font-semibold">
         <span className="size-2 rounded-full bg-success" />
         AI Agent · Autopilot
@@ -133,6 +133,9 @@ function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void 
       { label: "Create campaign", hint: "WhatsApp, SMS or email broadcast", href: "/campaigns?new=1", icon: Plus },
       { label: "Test AI agent in sandbox", hint: "Chat with your AI before going live", href: "/agent?tab=sandbox", icon: Bot },
       { label: "Run onboarding again", hint: "Website import and channel setup", href: "/onboarding", icon: Sparkles },
+      { label: "Add a task", hint: "Quick-add follow-ups in plain words", href: "/tasks", icon: Plus },
+      { label: "Notifications", hint: "Mentions, escalations and AI activity", href: "/notifications", icon: Bell },
+      { label: "Help center", hint: "Guides, shortcuts and Ask Anvita AI", href: "/help", icon: HelpCircle },
     ],
     [],
   );
@@ -201,6 +204,7 @@ function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void 
 
 function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void }) {
   const [notifOpen, setNotifOpen] = useState(false);
+  const [notifRead, setNotifRead] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const [locOpen, setLocOpen] = useState(false);
   const [location, setLocation] = useState(locations[0]);
@@ -257,32 +261,43 @@ function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void
         <span className="hidden sm:block">
           <ThemeToggle />
         </span>
-        <Link href="/onboarding" className="hidden rounded-lg p-2 text-fg-2 hover:bg-surface-2 md:block" aria-label="Help and setup">
+        <Link href="/help" className="hidden rounded-lg p-2 text-fg-2 hover:bg-surface-2 md:block" aria-label="Help center">
           <HelpCircle className="size-5" />
         </Link>
         <div ref={notifRef} className="relative">
           <button onClick={() => setNotifOpen((o) => !o)} className="relative rounded-lg p-2 text-fg-2 hover:bg-surface-2" aria-label="Notifications">
             <Bell className="size-5" />
-            <span className="absolute top-1.5 right-1.5 size-2 rounded-full border-2 border-surface bg-danger" />
+            {!notifRead && <span className="absolute top-1.5 right-1.5 size-2 rounded-full border-2 border-surface bg-danger" />}
           </button>
           {notifOpen && (
             <div className="animate-fade-in absolute top-full right-0 mt-1 w-[min(360px,calc(100vw-1.5rem))] rounded-xl border border-line bg-surface shadow-pop">
               <div className="flex items-center justify-between border-b border-line px-4 py-3">
                 <span className="text-sm font-semibold">Notifications</span>
-                <button className="text-xs text-primary">Mark all read</button>
+                <button className="text-xs text-primary" onClick={() => setNotifRead(true)}>
+                  Mark all read
+                </button>
               </div>
               <ul className="max-h-96 overflow-y-auto">
                 {notifications.map((n) => (
-                  <li key={n.title} className="flex gap-3 border-b border-line px-4 py-3 last:border-0 hover:bg-surface-2">
-                    <n.icon className={cn("mt-0.5 size-4 shrink-0", n.tone)} />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium">{n.title}</div>
-                      <div className="truncate text-xs text-muted">{n.body}</div>
-                    </div>
-                    <span className="text-[11px] text-muted">{n.time}</span>
+                  <li key={n.title} className="border-b border-line last:border-0">
+                    <Link href="/notifications" onClick={() => setNotifOpen(false)} className="flex gap-3 px-4 py-3 hover:bg-surface-2">
+                      <n.icon className={cn("mt-0.5 size-4 shrink-0", n.tone)} />
+                      <div className="min-w-0 flex-1">
+                        <div className={cn("text-sm", notifRead ? "text-fg-2" : "font-medium")}>{n.title}</div>
+                        <div className="truncate text-xs text-muted">{n.body}</div>
+                      </div>
+                      <span className="text-[11px] text-muted">{n.time}</span>
+                    </Link>
                   </li>
                 ))}
               </ul>
+              <Link
+                href="/notifications"
+                onClick={() => setNotifOpen(false)}
+                className="block rounded-b-xl border-t border-line px-4 py-2.5 text-center text-sm font-medium text-primary hover:bg-surface-2"
+              >
+                View all notifications
+              </Link>
             </div>
           )}
         </div>

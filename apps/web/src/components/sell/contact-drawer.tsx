@@ -2,6 +2,7 @@
 
 import {
   ArrowRightLeft,
+  ArrowUpRight,
   Bot,
   Briefcase,
   CalendarCheck,
@@ -20,6 +21,7 @@ import {
   Tag,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { AiCallout, Avatar, Badge, Button, ChannelIcon, Drawer, EmptyState, Input, MetaRow, Select, Switch, Tabs, Textarea, useToast } from "@/components/ui";
 import { channelMeta } from "@/components/ui/channel";
@@ -131,6 +133,12 @@ function ContactProfile({ contact, onUpdate }: { contact: Contact; onUpdate: (c:
               </span>
             </div>
           </div>
+          <Link
+            href={`/contacts/${contact.id}`}
+            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-fg-2 hover:bg-surface-2 hover:text-fg"
+          >
+            Open full profile <ArrowUpRight className="size-3.5" />
+          </Link>
         </div>
         <div className="mt-4 grid grid-cols-4 gap-2">
           {[

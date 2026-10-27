@@ -433,7 +433,7 @@ export const appointments: Appointment[] = seeds.map((s, i) => {
   const t24Due = day - 1 < NOW.dayIndex || (day - 1 === NOW.dayIndex && start <= NOW.hour);
   const t2Due = day < NOW.dayIndex || (day === NOW.dayIndex && start - 2 <= NOW.hour);
   const depositStatus: Appointment["deposit"]["status"] =
-    service.deposit === 0 ? "none" : status === "unconfirmed" ? "pending" : status === "no-show" ? "paid" : i % 7 === 3 ? "pending" : "paid";
+    service.deposit === 0 ? "none" : status === "unconfirmed" ? "pending" : status === "no-show" ? "paid" : i % 7 === 5 ? "pending" : "paid";
   return {
     id,
     contactId,

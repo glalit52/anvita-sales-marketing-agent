@@ -6,6 +6,7 @@ import {
   Inbox,
   Kanban,
   LayoutDashboard,
+  ListTodo,
   Megaphone,
   Plug,
   Radar,
@@ -38,6 +39,7 @@ export const navSections: NavSection[] = [
     items: [
       { href: "/dashboard", label: "Home", icon: LayoutDashboard, description: "KPIs, AI activity and today's tasks" },
       { href: "/inbox", label: "Inbox", icon: Inbox, badge: "12", description: "All conversations across every channel" },
+      { href: "/tasks", label: "Tasks", icon: ListTodo, badge: "4", description: "Follow-ups, many created by AI from conversations" },
       { href: "/agent", label: "AI Agent", icon: Bot, description: "Knowledge, playbooks, rules and sandbox" },
     ],
   },
