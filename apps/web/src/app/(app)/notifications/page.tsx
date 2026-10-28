@@ -21,7 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AiCallout, Avatar, Badge, Button, Card, CardBody, CardHeader, EmptyState, Page, PageHeader, Switch, Tabs, useToast } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import {
@@ -36,6 +36,9 @@ import {
   type NotificationIcon,
   type NotificationTab,
 } from "@/lib/mock/app";
+import { api } from "@/lib/live/client";
+import { LIVE } from "@/lib/live/config";
+import { loadNotifications } from "@/lib/live/store";
 import { sellContactById } from "@/lib/mock/sell";
 
 type Tab = "all" | NotificationTab;
@@ -80,9 +83,19 @@ export default function NotificationsPage() {
   }, [visible]);
 
   const unreadCount = (t: Tab) => items.filter((n) => inTab(n, t) && n.unread).length;
-  const setRead = (id: string, unread = false) => setItems((list) => list.map((n) => (n.id === id ? { ...n, unread } : n)));
+  useEffect(() => {
+    if (LIVE) loadNotifications().then((list) => setItems([...list]), () => {});
+  }, []);
+  const persistRead = (ids: string[]) => {
+    if (LIVE && ids.length) api("/notifications/read", { method: "POST", body: { ids } }).catch(() => {});
+  };
+  const setRead = (id: string, unread = false) => {
+    setItems((list) => list.map((n) => (n.id === id ? { ...n, unread } : n)));
+    if (!unread) persistRead([id]);
+  };
   const markAll = () => {
     const n = unreadCount(tab);
+    persistRead(items.filter((x) => inTab(x, tab) && x.unread).map((x) => x.id));
     setItems((list) => list.map((x) => (inTab(x, tab) ? { ...x, unread: false } : x)));
     toast({ title: n ? `${n} notification${n === 1 ? "" : "s"} marked as read` : "You're all caught up", tone: "info" });
   };
@@ -246,6 +259,7 @@ export default function NotificationsPage() {
           </Card>
 
           <AiCallout
+            className={cn(LIVE && "hidden")}
             title="Too noisy?"
             action={
               <Button size="xs" variant="outline" onClick={() => toast({ title: "Digest enabled", description: "Routine AI activity now arrives as one summary at 6:00 PM.", tone: "info" })}>
@@ -256,7 +270,7 @@ export default function NotificationsPage() {
             You opened only 3 of 27 “AI booked” alerts this week. Bundle routine AI activity into a 6 PM digest and keep escalations instant.
           </AiCallout>
 
-          <Card>
+          <Card className={cn(LIVE && "hidden")}>
             <CardHeader title="Delivery" description="Where you get alerted" />
             <CardBody className="space-y-3">
               {[

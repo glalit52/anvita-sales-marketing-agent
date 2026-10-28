@@ -83,6 +83,8 @@ export interface Message {
   card?: { type: "booking" | "payment" | "review"; title: string; subtitle: string; status?: string };
   /** KB sources the AI cited. */
   sources?: string[];
+  /** Copilot draft awaiting approval (live mode). */
+  draft?: boolean;
 }
 
 export interface Conversation {

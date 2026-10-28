@@ -45,7 +45,12 @@ import {
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { formatCurrency } from "@/lib/format";
+import { api, errorMessage } from "@/lib/live/client";
+import { LIVE } from "@/lib/live/config";
+import { useLiveSession } from "@/lib/live/session";
+import { loadConversation, loadConversations } from "@/lib/live/store";
 import { contactById, conversations as seed, memberById, stageMeta, team, type Conversation, type Message } from "@/lib/mock/core";
+import { CURRENT_USER_ID } from "@/lib/mock/sell";
 
 type View = "all" | "mine" | "ai" | "escalated";
 type StatusFilter = "open" | "pending" | "closed";
@@ -62,7 +67,7 @@ const aiSuggestions: Record<string, string> = {
   v7: "Absolutely, Rahul! Here are a few Thursday slots: 2:00, 3:30 or 4:30 PM IST. Pick one and I'll send a calendar invite with a Google Meet link.",
 };
 
-function MessageBubble({ m, contactName }: { m: Message; contactName: string }) {
+function MessageBubble({ m, contactName, onDraft }: { m: Message; contactName: string; onDraft?: (m: Message, action: "send" | "discard") => void }) {
   if (m.author === "system") {
     return (
       <div className="flex flex-col items-center gap-2 py-1">
@@ -83,6 +88,16 @@ function MessageBubble({ m, contactName }: { m: Message; contactName: string }) 
             {m.author === "ai" ? "AI draft (not sent)" : `Internal note · ${m.authorName}`}
           </div>
           <p className="whitespace-pre-wrap text-fg">{m.body.replace(/^Draft \(Copilot\): /, "")}</p>
+          {m.draft && onDraft && (
+            <div className="mt-2 flex justify-end gap-1.5">
+              <Button size="xs" variant="ghost" onClick={() => onDraft(m, "discard")}>
+                Discard
+              </Button>
+              <Button size="xs" onClick={() => onDraft(m, "send")}>
+                <Send /> Approve & send
+              </Button>
+            </div>
+          )}
           <div className="mt-1 text-right text-[10px] text-muted">{m.time}</div>
         </div>
       </div>
@@ -158,6 +173,11 @@ function ContactPanel({ convo, onAssign }: { convo: Conversation; onAssign: (ass
   const stage = stageMeta[contact.stage];
   const toast = useToast();
   const sentimentTone = { positive: "success", neutral: "neutral", negative: "danger" } as const;
+  const [consents, setConsents] = useState<{ channel: string; purpose: string; status: string }[] | null>(null);
+  useEffect(() => {
+    if (!LIVE) return;
+    api<{ channel: string; purpose: string; status: string }[]>(`/contacts/${contact.id}/consents`).then(setConsents, () => setConsents([]));
+  }, [contact.id]);
   return (
     <div className="space-y-5 p-5">
       <div className="flex flex-col items-center text-center">
@@ -171,7 +191,7 @@ function ContactPanel({ convo, onAssign }: { convo: Conversation; onAssign: (ass
           <Badge tone={stage.tone}>{stage.label}</Badge>
           <Badge tone="neutral">Score {contact.score}</Badge>
         </div>
-        <div className="mt-3 flex gap-2">
+        <div className={cn("mt-3 flex gap-2", LIVE && "hidden")}>
           <Button size="xs" variant="outline" onClick={() => toast({ title: "Booking link sent", description: `Sent to ${contact.name} on ${channelMeta[convo.channel].label}` })}>
             <CalendarPlus /> Book
           </Button>
@@ -227,12 +247,29 @@ function ContactPanel({ convo, onAssign }: { convo: Conversation; onAssign: (ass
       <div>
         <div className="mb-2 text-xs font-semibold tracking-wide text-muted uppercase">Consent</div>
         <div className="space-y-1.5 text-sm">
-          {["WhatsApp: service & marketing", "SMS: service only", "Email: marketing"].map((c, i) => (
-            <div key={c} className="flex items-center gap-2">
-              {i < 2 ? <CircleCheck className="size-4 text-success" /> : <Clock className="size-4 text-muted" />}
-              <span className={cn(i === 2 && "text-muted")}>{c}</span>
-            </div>
-          ))}
+          {LIVE ? (
+            consents === null ? (
+              <span className="text-muted">Loading…</span>
+            ) : consents.length === 0 ? (
+              <span className="text-muted">No consent recorded yet.</span>
+            ) : (
+              consents.map((c) => (
+                <div key={c.channel + c.purpose} className="flex items-center gap-2">
+                  {c.status === "opted_in" ? <CircleCheck className="size-4 text-success" /> : <Clock className="size-4 text-muted" />}
+                  <span className={cn(c.status !== "opted_in" && "text-muted", "capitalize")}>
+                    {c.channel}: {c.purpose} · {c.status.replace("_", " ")}
+                  </span>
+                </div>
+              ))
+            )
+          ) : (
+            ["WhatsApp: service & marketing", "SMS: service only", "Email: marketing"].map((c, i) => (
+              <div key={c} className="flex items-center gap-2">
+                {i < 2 ? <CircleCheck className="size-4 text-success" /> : <Clock className="size-4 text-muted" />}
+                <span className={cn(i === 2 && "text-muted")}>{c}</span>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>
@@ -243,6 +280,9 @@ function InboxInner() {
   const router = useRouter();
   const params = useSearchParams();
   const toast = useToast();
+  const live = useLiveSession();
+  const meName = live?.user.name ?? "Priya Sharma";
+  const bookingUrl = "https://book.anvita.ai/smile-dental";
   const [items, setItems] = useState<Conversation[]>(seed);
   const [view, setView] = useState<View>("all");
   const [status, setStatus] = useState<StatusFilter>("open");
@@ -261,13 +301,23 @@ function InboxInner() {
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
+  // Live mode: poll the conversation list, and the open thread more often.
+  const refreshList = () => loadConversations().then((list) => setItems([...list]));
+  const refreshThread = (id: string) =>
+    loadConversation(id).then((c) => setItems((prev) => (prev.some((x) => x.id === id) ? prev.map((x) => (x.id === id ? c : x)) : [c, ...prev])));
+  useEffect(() => {
+    if (!LIVE) return;
+    const t = setInterval(() => refreshList().catch(() => {}), 8000);
+    return () => clearInterval(t);
+  }, []);
+
   const filtered = useMemo(
     () =>
       items.filter((c) => {
         const contact = contactById(c.contactId)!;
         if (status !== c.status) return false;
         if (channel !== "any" && c.channel !== channel) return false;
-        if (view === "mine" && c.assignee !== "u1") return false;
+        if (view === "mine" && c.assignee !== CURRENT_USER_ID) return false;
         if (view === "ai" && c.assignee !== "ai") return false;
         if (view === "escalated" && !c.escalated) return false;
         if (query && !(contact.name + c.preview).toLowerCase().includes(query.toLowerCase())) return false;
@@ -277,6 +327,37 @@ function InboxInner() {
   );
 
   const active = items.find((c) => c.id === activeId) ?? filtered[0] ?? null;
+  const activeKey = active?.id;
+  useEffect(() => {
+    if (!LIVE || !activeKey) return;
+    refreshThread(activeKey).catch(() => {});
+    const t = setInterval(() => refreshThread(activeKey).catch(() => {}), 4000);
+    return () => clearInterval(t);
+  }, [activeKey]);
+
+  /** Live mode: apply a change through the API and reload the thread; demo mode: local state only. */
+  const persist = (id: string, request: () => Promise<unknown>) => {
+    if (!LIVE) return;
+    request()
+      .then(() => Promise.all([refreshThread(id), refreshList()]))
+      .catch((e) => toast({ title: "Couldn't save", description: errorMessage(e), tone: "warning" }));
+  };
+  const patch = (id: string, body: Record<string, unknown>) => persist(id, () => api(`/conversations/${id}`, { method: "PATCH", body }));
+  const assignTo = (id: string, assignee: string) => {
+    update(id, { assignee });
+    patch(id, assignee === "ai" ? { assigneeType: "ai" } : { assigneeType: "human", assigneeId: assignee });
+  };
+  const onDraft = (m: Message, action: "send" | "discard") => {
+    if (!active) return;
+    const id = active.id;
+    update(id, (c) => ({ messages: c.messages.filter((x) => x.id !== m.id) }));
+    persist(id, () =>
+      action === "send"
+        ? api(`/conversations/${id}/drafts/${m.id}/send`, { method: "POST" })
+        : api(`/conversations/${id}/drafts/${m.id}`, { method: "DELETE" }),
+    );
+    if (action === "send") toast({ title: "Draft sent", description: "Approved and sent to the customer." });
+  };
   const contact = active ? contactById(active.contactId)! : null;
   const aiActive = active?.assignee === "ai";
 
@@ -286,7 +367,7 @@ function InboxInner() {
 
   const counts = {
     all: items.filter((c) => c.status === status).length,
-    mine: items.filter((c) => c.status === status && c.assignee === "u1").length,
+    mine: items.filter((c) => c.status === status && c.assignee === CURRENT_USER_ID).length,
     ai: items.filter((c) => c.status === status && c.assignee === "ai").length,
     escalated: items.filter((c) => c.status === status && c.escalated).length,
   };
@@ -300,23 +381,26 @@ function InboxInner() {
     setDraft("");
     update(id, { unread: 0 });
     router.replace(`/inbox?c=${id}`, { scroll: false });
+    if (LIVE) api(`/conversations/${id}/read`, { method: "POST" }).catch(() => {});
   };
 
   const now = () => new Date().toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
 
   const send = () => {
     if (!active || !draft.trim()) return;
-    const msg: Message = { id: crypto.randomUUID(), author: "human", authorName: "Priya Sharma", body: draft.trim(), time: now(), note: mode === "note" };
+    const msg: Message = { id: crypto.randomUUID(), author: "human", authorName: meName, body: draft.trim(), time: now(), note: mode === "note" };
     update(active.id, (c) => ({
       messages: [...c.messages, msg],
       preview: mode === "note" ? c.preview : draft.trim(),
       time: "now",
       // A human reply pauses the AI on this thread (human-in-control guardrail).
-      assignee: mode === "reply" && c.assignee === "ai" ? "u1" : c.assignee,
+      assignee: mode === "reply" && c.assignee === "ai" ? CURRENT_USER_ID : c.assignee,
     }));
+    const body = { body: draft.trim(), isNote: mode === "note", idempotencyKey: msg.id };
+    persist(active.id, () => api(`/conversations/${active.id}/messages`, { method: "POST", body }));
     if (mode === "reply" && active.assignee === "ai") toast({ title: "AI paused on this conversation", description: "You replied, so Anvi will stay quiet until you hand it back.", tone: "info" });
     setDraft("");
-    if (mode === "reply" && active.id === "v4") {
+    if (!LIVE && mode === "reply" && active.id === "v4") {
       setTyping(true);
       timers.current.push(
         setTimeout(() => {
@@ -327,12 +411,21 @@ function InboxInner() {
     }
   };
 
-  const suggest = () => {
+  const suggest = async () => {
     if (!active) return;
-    const text = aiSuggestions[active.id] ?? "Thanks for reaching out! Let me check that for you and get back in a moment.";
     setSuggesting(true);
     setMode("reply");
     setDraft("");
+    let text = aiSuggestions[active.id] ?? "Thanks for reaching out! Let me check that for you and get back in a moment.";
+    if (LIVE) {
+      try {
+        text = (await api<{ body: string }>(`/conversations/${active.id}/suggest-reply`, { method: "POST" })).body;
+      } catch (e) {
+        setSuggesting(false);
+        toast({ title: "AI couldn't suggest a reply", description: errorMessage(e), tone: "warning" });
+        return;
+      }
+    }
     let i = 0;
     const tick = () => {
       i += 3;
@@ -346,10 +439,12 @@ function InboxInner() {
   const toggleAi = () => {
     if (!active) return;
     if (aiActive) {
-      update(active.id, { assignee: "u1" });
+      update(active.id, { assignee: CURRENT_USER_ID });
+      patch(active.id, { assigneeType: "human", assigneeId: CURRENT_USER_ID });
       toast({ title: "You took over", description: "Anvi is paused on this conversation.", tone: "info" });
     } else {
       update(active.id, { assignee: "ai", escalated: undefined });
+      patch(active.id, { assigneeType: "ai" });
       toast({ title: "Handed back to AI", description: "Anvi will continue from here using the conversation context." });
     }
   };
@@ -503,7 +598,7 @@ function InboxInner() {
               <Select
                 aria-label="Assignee"
                 value={active.assignee}
-                onChange={(e) => update(active.id, { assignee: e.target.value })}
+                onChange={(e) => assignTo(active.id, e.target.value)}
                 className="h-8 w-40 text-xs"
               >
                 <option value="ai">Anvi (AI)</option>
@@ -523,6 +618,7 @@ function InboxInner() {
               variant="outline"
               onClick={() => {
                 update(active.id, { status: active.status === "closed" ? "open" : "closed" });
+                patch(active.id, { status: active.status === "closed" ? "open" : "closed" });
                 toast({ title: active.status === "closed" ? "Conversation reopened" : "Conversation closed" });
               }}
             >
@@ -542,7 +638,13 @@ function InboxInner() {
               <span className="flex-1">
                 <b>Escalated by AI:</b> {active.escalated.reason}
               </span>
-              <button className="text-xs font-medium underline" onClick={() => update(active.id, { escalated: undefined })}>
+              <button
+                className="text-xs font-medium underline"
+                onClick={() => {
+                  update(active.id, { escalated: undefined });
+                  patch(active.id, { resolveEscalation: true });
+                }}
+              >
                 Resolve
               </button>
             </div>
@@ -551,7 +653,7 @@ function InboxInner() {
           <div className="scroll-thin flex-1 space-y-4 overflow-y-auto px-3 py-5 sm:px-6">
             <div className="text-center text-[11px] font-medium text-muted">Today</div>
             {active.messages.map((m) => (
-              <MessageBubble key={m.id} m={m} contactName={contact.name} />
+              <MessageBubble key={m.id} m={m} contactName={contact.name} onDraft={LIVE ? onDraft : undefined} />
             ))}
             {typing && (
               <div className="flex items-end gap-2">
@@ -576,7 +678,10 @@ function InboxInner() {
             )}
             {active.channel === "whatsapp" && (
               <div className="mb-2 flex items-center gap-1.5 text-[11px] text-muted">
-                <Clock className="size-3" /> WhatsApp service window open for 23h 14m. After that, only approved templates can be sent.
+                <Clock className="size-3" />{" "}
+                {LIVE
+                  ? "Free-form replies are allowed for 24h after the customer's last message. After that, only approved templates can be sent."
+                  : "WhatsApp service window open for 23h 14m. After that, only approved templates can be sent."}
               </div>
             )}
             <div className={cn("rounded-xl border bg-surface transition-colors focus-within:border-primary", mode === "note" ? "border-warning/50 bg-warning-soft/40" : "border-line")}>
@@ -620,12 +725,17 @@ function InboxInner() {
                 <Button size="icon-sm" variant="ghost" aria-label="Saved replies" onClick={() => setShowSaved((s) => !s)}>
                   <Zap />
                 </Button>
-                <Button size="icon-sm" variant="ghost" aria-label="Insert booking link" onClick={() => setDraft((d) => `${d}${d ? " " : ""}Book here: https://book.anvita.ai/smile-dental`)}>
-                  <Link2 />
-                </Button>
-                <Button size="icon-sm" variant="ghost" aria-label="Insert payment link" onClick={() => setDraft((d) => `${d}${d ? " " : ""}Pay securely: https://pay.anvita.ai/r/8KD2`)}>
-                  <IndianRupee />
-                </Button>
+                {/* The public booking page isn't connected to live workspaces yet. */}
+                {!LIVE && (
+                  <Button size="icon-sm" variant="ghost" aria-label="Insert booking link" onClick={() => setDraft((d) => `${d}${d ? " " : ""}Book here: ${bookingUrl}`)}>
+                    <Link2 />
+                  </Button>
+                )}
+                {!LIVE && (
+                  <Button size="icon-sm" variant="ghost" aria-label="Insert payment link" onClick={() => setDraft((d) => `${d}${d ? " " : ""}Pay securely: https://pay.anvita.ai/r/8KD2`)}>
+                    <IndianRupee />
+                  </Button>
+                )}
                 {showSaved && (
                   <div className="animate-fade-in absolute bottom-full left-2 z-10 mb-2 w-72 rounded-xl border border-line bg-surface p-1 shadow-pop">
                     <div className="px-3 py-1.5 text-[11px] font-semibold text-muted uppercase">Saved replies</div>
@@ -661,12 +771,12 @@ function InboxInner() {
       {/* Contact panel (desktop) */}
       {active && (
         <aside className="scroll-thin hidden w-[320px] shrink-0 overflow-y-auto border-l border-line bg-surface xl:block">
-          <ContactPanel convo={active} onAssign={(a) => update(active.id, { assignee: a })} />
+          <ContactPanel convo={active} onAssign={(a) => assignTo(active.id, a)} />
         </aside>
       )}
       {active && (
         <Drawer open={panelOpen} onClose={() => setPanelOpen(false)} title="Contact details" width="max-w-sm">
-          <ContactPanel convo={active} onAssign={(a) => update(active.id, { assignee: a })} />
+          <ContactPanel convo={active} onAssign={(a) => assignTo(active.id, a)} />
         </Drawer>
       )}
     </div>

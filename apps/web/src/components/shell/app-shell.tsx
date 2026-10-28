@@ -24,6 +24,11 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { allNavItems, navSections } from "@/lib/nav";
 import { Avatar, Badge, Kbd, Progress } from "@/components/ui";
+import { LIVE } from "@/lib/live/config";
+import { LiveGate, LiveRoute, signOut, useLiveSession } from "@/lib/live/session";
+import { api } from "@/lib/live/client";
+import { notifications as storeNotifications, relativeLabel, taskGroup, tasks as storeTasks, type NotificationIcon } from "@/lib/mock/app";
+import { conversations as storeConversations } from "@/lib/mock/core";
 import { Logo } from "./logo";
 import { ThemeToggle } from "./theme";
 
@@ -36,6 +41,26 @@ const notifications = [
   { icon: Star, tone: "text-warning", title: "New 5★ Google review", body: "“Painless whitening, super friendly staff…”", time: "3h" },
 ];
 
+const NOTIF_STYLE: Partial<Record<NotificationIcon, { icon: typeof Bell; tone: string }>> = {
+  escalation: { icon: TriangleAlert, tone: "text-danger" },
+  booking: { icon: CalendarCheck, tone: "text-success" },
+  payment: { icon: CreditCard, tone: "text-info" },
+  review: { icon: Star, tone: "text-warning" },
+  ai: { icon: Sparkles, tone: "text-ai" },
+};
+
+/** Top-bar preview: the demo list, or the latest workspace notifications in live mode. */
+function previewNotifications() {
+  if (!LIVE) return notifications.map((n) => ({ ...n, unread: true }));
+  return storeNotifications.slice(0, 5).map((n) => ({
+    ...(NOTIF_STYLE[n.icon] ?? { icon: Bell, tone: "text-muted" }),
+    title: n.title,
+    body: n.body,
+    time: relativeLabel(n.at),
+    unread: n.unread,
+  }));
+}
+
 function useOutsideClose(open: boolean, close: () => void) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -47,6 +72,18 @@ function useOutsideClose(open: boolean, close: () => void) {
     return () => document.removeEventListener("mousedown", handler);
   }, [open, close]);
   return ref;
+}
+
+/** Sidebar counters: the demo's fixed numbers, or unread threads and due tasks in live mode. */
+function navBadge(href: string, demo?: string) {
+  if (!LIVE) return demo;
+  const n =
+    href === "/inbox"
+      ? storeConversations.filter((c) => c.status !== "closed" && c.unread > 0).length
+      : href === "/tasks"
+        ? storeTasks.filter((t) => !t.done && ["overdue", "today"].includes(taskGroup(t))).length
+        : 0;
+  return n ? String(n) : undefined;
 }
 
 function SidebarContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
@@ -77,8 +114,8 @@ function SidebarContent({ collapsed, onNavigate }: { collapsed: boolean; onNavig
                   >
                     <Icon className="size-[18px] shrink-0" />
                     {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
-                    {!collapsed && item.badge && (
-                      <span className="rounded-full bg-primary px-1.5 text-[10px] leading-4 font-semibold text-primary-fg">{item.badge}</span>
+                    {!collapsed && navBadge(item.href, item.badge) && (
+                      <span className="rounded-full bg-primary px-1.5 text-[10px] leading-4 font-semibold text-primary-fg">{navBadge(item.href, item.badge)}</span>
                     )}
                   </Link>
                 </li>
@@ -203,11 +240,24 @@ function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void 
 }
 
 function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void }) {
+  const router = useRouter();
+  const live = useLiveSession();
+  const user = live ? { name: live.user.name, email: live.user.email, role: live.org.role } : { name: "Priya Sharma", email: "priya@smiledental.in", role: "owner" };
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifRead, setNotifRead] = useState(false);
+  const preview = previewNotifications();
+  const hasUnread = !notifRead && preview.some((n) => n.unread);
+  const markAllRead = () => {
+    setNotifRead(true);
+    if (LIVE) {
+      storeNotifications.forEach((n) => (n.unread = false));
+      api("/notifications/read", { method: "POST", body: {} }).catch(() => {});
+    }
+  };
   const [userOpen, setUserOpen] = useState(false);
   const [locOpen, setLocOpen] = useState(false);
   const [location, setLocation] = useState(locations[0]);
+  const locationLabel = live ? live.org.name : location;
   const notifRef = useOutsideClose(notifOpen, () => setNotifOpen(false));
   const userRef = useOutsideClose(userOpen, () => setUserOpen(false));
   const locRef = useOutsideClose(locOpen, () => setLocOpen(false));
@@ -219,9 +269,9 @@ function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void
       </button>
 
       <div ref={locRef} className="relative hidden md:block">
-        <button onClick={() => setLocOpen((o) => !o)} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium hover:bg-surface-2">
-          <span className="flex size-5 items-center justify-center rounded bg-accent text-[10px] font-bold text-white">S</span>
-          <span className="max-w-[220px] truncate">{location}</span>
+        <button onClick={() => !live && setLocOpen((o) => !o)} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium hover:bg-surface-2">
+          <span className="flex size-5 items-center justify-center rounded bg-accent text-[10px] font-bold text-white">{locationLabel[0]}</span>
+          <span className="max-w-[220px] truncate">{locationLabel}</span>
           <ChevronDown className="size-3.5 text-muted" />
         </button>
         {locOpen && (
@@ -267,23 +317,24 @@ function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void
         <div ref={notifRef} className="relative">
           <button onClick={() => setNotifOpen((o) => !o)} className="relative rounded-lg p-2 text-fg-2 hover:bg-surface-2" aria-label="Notifications">
             <Bell className="size-5" />
-            {!notifRead && <span className="absolute top-1.5 right-1.5 size-2 rounded-full border-2 border-surface bg-danger" />}
+            {hasUnread && <span className="absolute top-1.5 right-1.5 size-2 rounded-full border-2 border-surface bg-danger" />}
           </button>
           {notifOpen && (
             <div className="animate-fade-in absolute top-full right-0 mt-1 w-[min(360px,calc(100vw-1.5rem))] rounded-xl border border-line bg-surface shadow-pop">
               <div className="flex items-center justify-between border-b border-line px-4 py-3">
                 <span className="text-sm font-semibold">Notifications</span>
-                <button className="text-xs text-primary" onClick={() => setNotifRead(true)}>
+                <button className="text-xs text-primary" onClick={markAllRead}>
                   Mark all read
                 </button>
               </div>
               <ul className="max-h-96 overflow-y-auto">
-                {notifications.map((n) => (
-                  <li key={n.title} className="border-b border-line last:border-0">
+                {preview.length === 0 && <li className="px-4 py-6 text-center text-sm text-muted">You&apos;re all caught up.</li>}
+                {preview.map((n, i) => (
+                  <li key={i} className="border-b border-line last:border-0">
                     <Link href="/notifications" onClick={() => setNotifOpen(false)} className="flex gap-3 px-4 py-3 hover:bg-surface-2">
                       <n.icon className={cn("mt-0.5 size-4 shrink-0", n.tone)} />
                       <div className="min-w-0 flex-1">
-                        <div className={cn("text-sm", notifRead ? "text-fg-2" : "font-medium")}>{n.title}</div>
+                        <div className={cn("text-sm", notifRead || !n.unread ? "text-fg-2" : "font-medium")}>{n.title}</div>
                         <div className="truncate text-xs text-muted">{n.body}</div>
                       </div>
                       <span className="text-[11px] text-muted">{n.time}</span>
@@ -303,13 +354,15 @@ function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void
         </div>
         <div ref={userRef} className="relative">
           <button onClick={() => setUserOpen((o) => !o)} className="ml-1 rounded-full" aria-label="Account menu">
-            <Avatar name="Priya Sharma" online />
+            <Avatar name={user.name} online />
           </button>
           {userOpen && (
             <div className="animate-fade-in absolute top-full right-0 mt-1 w-60 rounded-xl border border-line bg-surface p-1 shadow-pop">
               <div className="px-3 py-2">
-                <div className="text-sm font-semibold">Priya Sharma</div>
-                <div className="text-xs text-muted">priya@smiledental.in · Owner</div>
+                <div className="text-sm font-semibold">{user.name}</div>
+                <div className="text-xs text-muted">
+                  {user.email} · <span className="capitalize">{user.role}</span>
+                </div>
               </div>
               <div className="my-1 border-t border-line" />
               <Link href="/settings" className="block rounded-lg px-3 py-2 text-sm hover:bg-surface-2">Account settings</Link>
@@ -318,7 +371,16 @@ function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void
                 <ThemeToggle />
               </div>
               <div className="my-1 border-t border-line" />
-              <Link href="/login" className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-danger hover:bg-surface-2">
+              <Link
+                href="/login"
+                onClick={async (e) => {
+                  if (!LIVE) return;
+                  e.preventDefault();
+                  await signOut();
+                  router.replace("/login");
+                }}
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-danger hover:bg-surface-2"
+              >
                 <LogOut className="size-4" /> Sign out
               </Link>
             </div>
@@ -330,6 +392,16 @@ function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  return (
+    <LiveGate>
+      <Shell>
+        <LiveRoute>{children}</LiveRoute>
+      </Shell>
+    </LiveGate>
+  );
+}
+
+function Shell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
