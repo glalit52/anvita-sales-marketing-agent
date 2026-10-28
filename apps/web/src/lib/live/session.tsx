@@ -7,6 +7,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { Button, Card } from "@/components/ui";
 import { api, errorMessage, getTokens, SESSION_EXPIRED, setTokens } from "./client";
 import { LIVE } from "./config";
+import { loaderFor } from "./modules";
 import { bootstrap, session } from "./store";
 import type { Me } from "./types";
 
@@ -22,7 +23,7 @@ export async function signOut() {
   if (tokens) await api("/auth/logout", { method: "POST", body: { refreshToken: tokens.refreshToken }, auth: false }).catch(() => {});
 }
 
-/** Screens backed by the API. Other modules show a "not connected yet" card in live mode. */
+/** Screens backed by the API without a route loader (they load their own data). */
 const CONNECTED = ["/dashboard", "/inbox", "/tasks", "/contacts", "/notifications", "/help"];
 
 function NotConnected() {
@@ -88,9 +89,39 @@ export function LiveGate({ children }: { children: ReactNode }) {
   return <SessionContext.Provider value={me}>{children}</SessionContext.Provider>;
 }
 
-/** Wraps page content: in live mode, modules without a backend yet show a placeholder. */
+/** Wraps page content: in live mode, loads the route's data first (see modules/index.ts). */
 export function LiveRoute({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const load = LIVE ? loaderFor(pathname) : undefined;
+  const [state, setState] = useState<{ path: string; status: "ready" | "error"; error?: string } | null>(null);
+
+  useEffect(() => {
+    if (!load) return;
+    let cancelled = false;
+    load(pathname).then(
+      () => !cancelled && setState({ path: pathname, status: "ready" }),
+      (e) => !cancelled && setState({ path: pathname, status: "error", error: errorMessage(e) }),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [load, pathname]);
+
   if (!LIVE || CONNECTED.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return <>{children}</>;
-  return <NotConnected />;
+  if (!load) return <NotConnected />;
+  if (state?.path === pathname && state.status === "ready") return <>{children}</>;
+  if (state?.path === pathname && state.status === "error")
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 p-16 text-center text-sm">
+        <p className="text-danger">Couldn&apos;t load this page: {state.error}</p>
+        <Button variant="outline" onClick={() => window.location.reload()}>
+          Try again
+        </Button>
+      </div>
+    );
+  return (
+    <div className="flex items-center justify-center p-16 text-sm text-muted">
+      <Loader2 className="mr-2 size-4 animate-spin" /> Loading…
+    </div>
+  );
 }

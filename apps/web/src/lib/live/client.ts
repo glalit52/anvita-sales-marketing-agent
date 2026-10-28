@@ -119,3 +119,20 @@ export async function apiAll<T>(path: string, query: Query = {}, max = 2000): Pr
 }
 
 export const errorMessage = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong");
+
+/** A paid-API slot (Apollo, Google Ads, …) isn't configured: the API answers 501 with the vendor options. */
+export function providerMissing(e: unknown): { kind: string; options: { id: string; name: string }[] } | null {
+  if (!(e instanceof ApiError) || e.code !== "provider_not_configured") return null;
+  const d = (e.details ?? {}) as { kind?: string; options?: { id: string; name: string }[] };
+  return { kind: d.kind ?? "", options: d.options ?? [] };
+}
+
+/** Toast-friendly text for API errors, pointing at Integrations when a paid provider is missing. */
+export function friendlyError(e: unknown): string {
+  const missing = providerMissing(e);
+  if (missing) {
+    const names = missing.options.map((o) => o.name).join(" or ");
+    return `Connect ${names || "a provider"} in Integrations to use this.`;
+  }
+  return errorMessage(e);
+}
