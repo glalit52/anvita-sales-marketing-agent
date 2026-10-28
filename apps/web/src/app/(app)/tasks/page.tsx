@@ -38,8 +38,28 @@ import {
   type TaskGroup,
   type TaskType,
 } from "@/lib/mock/app";
+import { toTask } from "@/lib/live/adapters";
+import { api, errorMessage } from "@/lib/live/client";
+import { LIVE } from "@/lib/live/config";
+import { loadTasks } from "@/lib/live/store";
+import type { ApiTask } from "@/lib/live/types";
+import { fromStamp } from "@/lib/mock/app";
 import { team } from "@/lib/mock/core";
-import { sellContactById } from "@/lib/mock/sell";
+import { CURRENT_USER_ID, sellContactById } from "@/lib/mock/sell";
+
+/** Task fields back into the API's shape. */
+function taskBody(t: Task) {
+  return {
+    title: t.title,
+    type: t.type,
+    contactId: t.contactId ?? null,
+    assigneeId: t.assigneeId === "ai" ? null : t.assigneeId,
+    dueAt: fromStamp(t.due),
+    hasTime: t.hasTime,
+    priority: t.priority,
+    notes: t.notes ?? null,
+  };
+}
 
 const groups: TaskGroup[] = ["overdue", "today", "upcoming", "done"];
 const types = Object.keys(taskTypeMeta) as TaskType[];
@@ -74,13 +94,13 @@ export default function TasksPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const parsed = draft.trim() ? parseTask(draft) : null;
+  const parsed = draft.trim() ? parseTask(draft, CURRENT_USER_ID) : null;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((t) => {
       const contact = t.contactId ? sellContactById(t.contactId) : undefined;
-      if (assignee === "me" && t.assigneeId !== "u1") return false;
+      if (assignee === "me" && t.assigneeId !== CURRENT_USER_ID) return false;
       if (assignee !== "all" && assignee !== "me" && t.assigneeId !== assignee) return false;
       if (aiOnly && t.createdBy !== "ai") return false;
       if (typeFilter.length && !typeFilter.includes(t.type)) return false;
@@ -105,14 +125,32 @@ export default function TasksPage() {
   const aiCreated = open.filter((t) => t.createdBy === "ai").length;
   const doneToday = items.filter((t) => t.done && t.doneAt && Math.floor(t.doneAt / 1440) === TODAY).length;
 
+  useEffect(() => {
+    if (LIVE) loadTasks().then((list) => setItems([...list]), () => {});
+  }, []);
+
+  /** Live mode: persist one task; on failure reload so the list matches the server again. */
+  const sync = (task: Task, extra: Record<string, unknown> = {}) => {
+    if (!LIVE) return;
+    api<ApiTask>(`/tasks/${task.id}`, { method: "PATCH", body: { ...taskBody(task), done: task.done, ...extra } }).then(
+      (saved) => setItems((list) => list.map((t) => (t.id === task.id ? toTask(saved) : t))),
+      (e) => {
+        toast({ title: "Couldn't save task", description: errorMessage(e), tone: "warning" });
+        loadTasks().then((list) => setItems([...list]), () => {});
+      },
+    );
+  };
+
   const update = (task: Task, message?: string) => {
     setItems((list) => list.map((t) => (t.id === task.id ? task : t)));
+    sync(task);
     if (message) toast({ title: message, description: task.title });
   };
 
   const toggleDone = (task: Task) => {
     const next = task.done ? { ...task, done: false, doneAt: undefined } : { ...task, done: true, doneAt: NOW_STAMP };
     setItems((list) => list.map((t) => (t.id === task.id ? next : t)));
+    sync(next);
     if (!task.done) toast({ title: "Task completed", description: task.title });
   };
 
@@ -124,7 +162,7 @@ export default function TasksPage() {
       type: parsed.type,
       contactId: parsed.contact?.id,
       assigneeId: parsed.assigneeId,
-      createdBy: "u1",
+      createdBy: CURRENT_USER_ID,
       createdAt: NOW_STAMP,
       due: parsedStamp(parsed),
       hasTime: parsed.hasTime,
@@ -133,6 +171,14 @@ export default function TasksPage() {
     };
     setItems((list) => [task, ...list]);
     setDraft("");
+    if (LIVE)
+      api<ApiTask>("/tasks", { method: "POST", body: { ...taskBody(task), assigneeId: task.assigneeId === "ai" ? CURRENT_USER_ID : task.assigneeId } }).then(
+        (saved) => setItems((list) => list.map((t) => (t.id === task.id ? toTask(saved) : t))),
+        (e) => {
+          setItems((list) => list.filter((t) => t.id !== task.id));
+          toast({ title: "Couldn't add task", description: errorMessage(e), tone: "warning" });
+        },
+      );
     toast({ title: "Task added", description: `${dueLabel(task)} · ${assigneeName(task.assigneeId)}` });
   };
 
@@ -148,6 +194,7 @@ export default function TasksPage() {
             ? { done: false, doneAt: undefined, due: stamp(TODAY + 1, 9 * 60), hasTime: true }
             : { done: false, doneAt: undefined, due: stamp(TODAY - 1, 18 * 60), hasTime: false };
     setItems((list) => list.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    sync({ ...task, ...patch });
     toast({ title: g === "done" ? "Task completed" : `Moved to ${groupMeta[g].label}`, description: g === "today" ? "Due today, 6:00 PM" : g === "upcoming" ? "Due tomorrow, 9:00 AM" : task.title });
   };
 
@@ -227,7 +274,7 @@ export default function TasksPage() {
               {parsed.hasTime ? `, ${timeLabel(parsed.minutes)}` : ""}
             </ParsedChip>
             <ParsedChip label="Assignee" active={parsed.assigneeMatched}>
-              <UserRound className="size-3.5" /> {parsed.assigneeId === "u1" ? "Me" : assigneeName(parsed.assigneeId)}
+              <UserRound className="size-3.5" /> {parsed.assigneeId === CURRENT_USER_ID ? "Me" : assigneeName(parsed.assigneeId)}
             </ParsedChip>
             {parsed.priority === "high" && (
               <ParsedChip label="Priority" active>
@@ -262,7 +309,7 @@ export default function TasksPage() {
             <option value="me">Assigned to me</option>
             <option value="ai">Anvita AI</option>
             {team
-              .filter((m) => m.id !== "u1")
+              .filter((m) => m.id !== CURRENT_USER_ID)
               .map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}
@@ -305,6 +352,7 @@ export default function TasksPage() {
               <Button
                 size="xs"
                 variant="ai"
+                className={cn(LIVE && "hidden")}
                 onClick={() => {
                   const ids = items.filter((t) => !t.done && taskGroup(t) === "overdue" && (t.type === "whatsapp" || t.type === "payment")).map((t) => t.id);
                   setItems((list) => list.map((t) => (ids.includes(t.id) ? { ...t, assigneeId: "ai" } : t)));
@@ -413,6 +461,7 @@ export default function TasksPage() {
         onDelete={(t) => {
           setItems((list) => list.filter((x) => x.id !== t.id));
           setOpenId(null);
+          if (LIVE) api(`/tasks/${t.id}`, { method: "DELETE" }).catch((e) => toast({ title: "Couldn't delete task", description: errorMessage(e), tone: "warning" }));
           toast({ title: "Task deleted", description: t.title, tone: "warning" });
         }}
       />

@@ -1,7 +1,9 @@
 import type { Channel } from "@/components/ui/channel";
 import { channelMeta } from "@/components/ui/channel";
 import { formatCurrency } from "@/lib/format";
-import { conversations, type Contact } from "./core";
+import { LIVE } from "@/lib/live/config";
+import { liveTimeZone } from "@/lib/live/timezone";
+import { conversations, team, type Contact } from "./core";
 import { reviews } from "./growth";
 import {
   allContacts,
@@ -31,24 +33,60 @@ import {
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MONTH_START = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const EPOCH = Date.UTC(2026, 0, 1);
 
 /** Day number (days since 1 Jan 2026). `month` is 0-based; day overflow rolls forward. */
 export const dayNum = (month: number, day: number) => MONTH_START[month] + day - 1;
-export const TODAY = dayNum(9, 27);
-export const NOW_MIN = 11 * 60 + 20;
+
+/** In live mode "now" is the real clock (in the workspace time zone); the demo is frozen at 27 Oct, 11:20 AM. */
+const liveNow = LIVE ? toStamp(new Date().toISOString()) : null;
+export const TODAY = liveNow === null ? dayNum(9, 27) : dayOf(liveNow);
+export const NOW_MIN = liveNow === null ? 11 * 60 + 20 : minOf(liveNow);
 export const NOW_STAMP = TODAY * 1440 + NOW_MIN;
 
-export const stamp = (day: number, minutes = 9 * 60) => day * 1440 + minutes;
-export const dayOf = (s: number) => Math.floor(s / 1440);
-export const minOf = (s: number) => s - dayOf(s) * 1440;
+export function stamp(day: number, minutes = 9 * 60) {
+  return day * 1440 + minutes;
+}
+export function dayOf(s: number) {
+  return Math.floor(s / 1440);
+}
+export function minOf(s: number) {
+  return s - dayOf(s) * 1440;
+}
 
-/** 0 = Sun … 6 = Sat. 27 Oct 2026 is a Tuesday. */
-export const weekdayOf = (day: number) => (((day - TODAY) % 7) + 7 + 2) % 7;
+
+/** 0 = Sun … 6 = Sat. Pure UTC arithmetic, so it renders the same on server and client. */
+export const weekdayOf = (day: number) => new Date(EPOCH + day * 86_400_000).getUTCDay();
 
 function monthDay(day: number) {
-  let m = 11;
-  while (m > 0 && MONTH_START[m] > day) m--;
-  return { month: m, date: day - MONTH_START[m] + 1 };
+  const d = new Date(EPOCH + day * 86_400_000);
+  return { month: d.getUTCMonth(), date: d.getUTCDate() };
+}
+
+/** Converts an ISO timestamp from the API into a stamp, in the workspace time zone. */
+export function toStamp(iso: string, timeZone = liveTimeZone.value) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      hourCycle: "h23",
+    })
+      .formatToParts(new Date(iso))
+      .map((p) => [p.type, Number(p.value)]),
+  );
+  const day = Math.round((Date.UTC(parts.year, parts.month - 1, parts.day) - EPOCH) / 86_400_000);
+  return day * 1440 + parts.hour * 60 + parts.minute;
+}
+
+/** Inverse of toStamp: a stamp in the workspace time zone → ISO timestamp (UTC). */
+export function fromStamp(s: number, timeZone = liveTimeZone.value) {
+  const guess = EPOCH + s * 60_000;
+  const offset = toStamp(new Date(guess).toISOString(), timeZone) - s; // minutes the zone is ahead of UTC
+  return new Date(guess - offset * 60_000).toISOString();
 }
 
 export function dateLabel(day: number) {
@@ -358,7 +396,8 @@ export interface Task {
 }
 
 export function assigneeName(id: string) {
-  return { ai: "Anvita AI", u1: "Priya Sharma", u2: "Arjun Patil", u3: "Neha Kulkarni", u4: "Vikram Joshi" }[id] ?? "Unassigned";
+  if (id === "ai") return "Anvita AI";
+  return team.find((m) => m.id === id)?.name ?? "Unassigned";
 }
 
 const T = (offset: number, h: number, m = 0) => stamp(TODAY + offset, h * 60 + m);

@@ -1,7 +1,7 @@
 "use client";
 
 import { Download, Funnel, Megaphone, Plus, Search, Send, Tag, Upload, Users, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Avatar, Badge, Button, Card, ChannelIcon, Checkbox, EmptyState, Input, Page, PageHeader, Select, Tabs, useToast } from "@/components/ui";
 import { channelMeta, type Channel } from "@/components/ui/channel";
 import { AddContactModal, BulkSequenceModal, BulkTagModal, ImportCsvModal } from "@/components/sell/contact-modals";
@@ -9,6 +9,11 @@ import { ContactDrawer } from "@/components/sell/contact-drawer";
 import { OwnerChip, ScoreBar, SortHeader } from "@/components/sell/shared";
 import { cn } from "@/lib/cn";
 import { formatCurrency } from "@/lib/format";
+import { contactPatch, toContact } from "@/lib/live/adapters";
+import { api, errorMessage } from "@/lib/live/client";
+import { LIVE } from "@/lib/live/config";
+import { loadContacts, upsertContact } from "@/lib/live/store";
+import type { ApiContact } from "@/lib/live/types";
 import { stageMeta, team, type Contact, type Stage } from "@/lib/mock/core";
 import { allContacts, CURRENT_USER_ID, minutesAgo } from "@/lib/mock/sell";
 
@@ -89,7 +94,43 @@ export default function ContactsPage() {
   };
 
   const openContact = rows.find((r) => r.id === openId) ?? null;
-  const updateContact = (c: Contact) => setRows((rs) => rs.map((r) => (r.id === c.id ? c : r)));
+  useEffect(() => {
+    if (LIVE) loadContacts().then((list) => setRows([...list]), () => {});
+  }, []);
+
+  const saved = (c: Contact) => {
+    upsertContact(c);
+    setRows((rs) => rs.map((r) => (r.id === c.id ? c : r)));
+  };
+  const updateContact = (c: Contact) => {
+    const before = rows.find((r) => r.id === c.id);
+    setRows((rs) => rs.map((r) => (r.id === c.id ? c : r)));
+    if (!LIVE || !before) return;
+    const changed = Object.fromEntries(
+      Object.entries(c).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(before[k as keyof Contact])),
+    ) as Partial<Contact>;
+    api<ApiContact>(`/contacts/${c.id}`, { method: "PATCH", body: contactPatch(changed) }).then(
+      (r) => saved(toContact(r)),
+      (e) => {
+        setRows((rs) => rs.map((r) => (r.id === c.id ? before : r)));
+        toast({ title: "Couldn't update contact", description: errorMessage(e), tone: "warning" });
+      },
+    );
+  };
+  const createContact = (c: Contact) => {
+    setRows((rs) => [c, ...rs]);
+    if (!LIVE) return;
+    api<ApiContact>("/contacts", { method: "POST", body: { ...contactPatch(c), stage: c.stage } }).then(
+      (r) => {
+        const created = upsertContact(toContact(r));
+        setRows((rs) => rs.map((x) => (x.id === c.id ? created : x)));
+      },
+      (e) => {
+        setRows((rs) => rs.filter((x) => x.id !== c.id));
+        toast({ title: "Couldn't add contact", description: errorMessage(e), tone: "warning" });
+      },
+    );
+  };
 
   return (
     <Page>
@@ -294,7 +335,7 @@ export default function ContactsPage() {
       </Card>
 
       <ContactDrawer contact={openContact} onClose={() => setOpenId(null)} onUpdate={updateContact} />
-      <AddContactModal open={addOpen} onClose={() => setAddOpen(false)} onCreate={(c) => setRows((rs) => [c, ...rs])} />
+      <AddContactModal open={addOpen} onClose={() => setAddOpen(false)} onCreate={createContact} />
       <ImportCsvModal open={importOpen} onClose={() => setImportOpen(false)} />
       <BulkSequenceModal
         open={bulk === "sequence"}
@@ -312,6 +353,10 @@ export default function ContactsPage() {
         onClose={() => setBulk(null)}
         onConfirm={(tag) => {
           setRows((rs) => rs.map((r) => (selected.includes(r.id) && !r.tags.includes(tag) ? { ...r, tags: [...r.tags, tag] } : r)));
+          if (LIVE)
+            api("/contacts/bulk", { method: "POST", body: { ids: selected, addTags: [tag] } }).catch((e) =>
+              toast({ title: "Couldn't tag contacts", description: errorMessage(e), tone: "warning" }),
+            );
           toast({ title: `Tagged ${selected.length} contacts`, description: `Added “${tag}”.` });
           setBulk(null);
         }}

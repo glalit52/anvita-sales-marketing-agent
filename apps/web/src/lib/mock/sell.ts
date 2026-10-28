@@ -9,7 +9,11 @@ import { contacts as coreContacts, type Contact } from "./core";
  */
 
 export const NOW = { dayIndex: 1, hour: 11 + 20 / 60, label: "Tue, 27 Oct" };
-export const CURRENT_USER_ID = "u1";
+/** The signed-in teammate. "u1" in the demo; replaced with the real user id at sign-in in live mode. */
+export let CURRENT_USER_ID = "u1";
+export function setCurrentUserId(id: string) {
+  CURRENT_USER_ID = id;
+}
 
 /* ------------------------------------------------------------------ */
 /* Contacts                                                            */

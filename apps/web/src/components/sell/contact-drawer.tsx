@@ -22,7 +22,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AiCallout, Avatar, Badge, Button, ChannelIcon, Drawer, EmptyState, Input, MetaRow, Select, Switch, Tabs, Textarea, useToast } from "@/components/ui";
 import { channelMeta } from "@/components/ui/channel";
 import { cn } from "@/lib/cn";
@@ -40,6 +40,10 @@ import {
   type ContactNote,
   type TimelineType,
 } from "@/lib/mock/sell";
+import { errorMessage } from "@/lib/live/client";
+import { LIVE } from "@/lib/live/config";
+import { addNote, fetchProfile, saveConsent, toNote } from "@/lib/live/contact";
+import { useLiveSession } from "@/lib/live/session";
 import { PayLinkModal } from "./pay-link-modal";
 import { OwnerChip, ScoreBar, ownerName } from "./shared";
 
@@ -78,7 +82,7 @@ export function ContactDrawer({
   );
 }
 
-function ContactProfile({ contact, onUpdate }: { contact: Contact; onUpdate: (c: Contact) => void }) {
+export function ContactProfile({ contact, onUpdate }: { contact: Contact; onUpdate: (c: Contact) => void }) {
   const toast = useToast();
   const [tab, setTab] = useState<Tab>("overview");
   const [consent, setConsent] = useState(() => consentFor(contact));
@@ -87,8 +91,23 @@ function ContactProfile({ contact, onUpdate }: { contact: Contact; onUpdate: (c:
   const [tagDraft, setTagDraft] = useState("");
   const [addingTag, setAddingTag] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
+  const live = useLiveSession();
+  const me = live?.user.name ?? "Priya Sharma";
+  const [liveTimeline, setLiveTimeline] = useState<ReturnType<typeof timelineFor> | null>(null);
+  const [liveSummary, setLiveSummary] = useState<string | null>(null);
+  useEffect(() => {
+    if (!LIVE) return;
+    fetchProfile(contact.id)
+      .then((p) => {
+        setConsent(p.consent);
+        setNotes(p.notes);
+        setLiveTimeline(p.timeline);
+        setLiveSummary(p.summary);
+      })
+      .catch((e) => toast({ title: "Couldn't load contact details", description: errorMessage(e), tone: "warning" }));
+  }, [contact.id, toast]);
   const contactDeals = deals.filter((d) => d.contactId === contact.id);
-  const timeline = timelineFor(contact);
+  const timeline = LIVE ? (liveTimeline ?? []) : timelineFor(contact);
   const first = contact.name.split(" ")[0];
   const waConsent = consent.find((c) => c.channel === "whatsapp")?.status;
 
@@ -96,10 +115,14 @@ function ContactProfile({ contact, onUpdate }: { contact: Contact; onUpdate: (c:
     setConsent((prev) =>
       prev.map((c) =>
         c.channel === channel
-          ? { ...c, status: on ? "opted_in" : "opted_out", source: on ? "Recorded manually by Priya Sharma (verbal consent at reception)" : "Opt-out recorded manually by Priya Sharma", date: "27 Oct 2026, 11:20 AM" }
+          ? { ...c, status: on ? "opted_in" : "opted_out", source: on ? `Recorded manually by ${me} (verbal consent at reception)` : `Opt-out recorded manually by ${me}`, date: LIVE ? "Just now" : "27 Oct 2026, 11:20 AM" }
           : c,
       ),
     );
+    if (LIVE)
+      saveConsent(contact.id, channel, on, on ? `Recorded manually by ${me}` : `Opt-out recorded manually by ${me}`).catch((e) =>
+        toast({ title: "Couldn't save consent", description: errorMessage(e), tone: "warning" }),
+      );
     toast({ title: `${channelMeta[channel].label} marketing ${on ? "opt-in" : "opt-out"} recorded`, description: "Saved to the consent log with timestamp (DPDP audit trail).", tone: "info" });
   };
 
@@ -194,7 +217,7 @@ function ContactProfile({ contact, onUpdate }: { contact: Contact; onUpdate: (c:
                 </>
               }
             >
-              {aiSummaryFor(contact)}
+              {LIVE ? (liveSummary ?? "No AI summary yet. It appears after the first conversation.") : aiSummaryFor(contact)}
             </AiCallout>
 
             <section>
@@ -375,7 +398,11 @@ function ContactProfile({ contact, onUpdate }: { contact: Contact; onUpdate: (c:
                   size="sm"
                   disabled={!draft.trim()}
                   onClick={() => {
-                    setNotes((n) => [{ id: `n${n.length + 10}`, author: "Priya Sharma", body: draft.trim(), time: "Just now" }, ...n]);
+                    setNotes((n) => [{ id: `n${n.length + 10}`, author: me, body: draft.trim(), time: "Just now" }, ...n]);
+                    if (LIVE)
+                      addNote(contact.id, draft.trim())
+                        .then((saved) => setNotes((n) => [toNote(saved), ...n.slice(1)]))
+                        .catch((e) => toast({ title: "Couldn't save note", description: errorMessage(e), tone: "warning" }));
                     setDraft("");
                     toast({ title: "Note added", description: "Only your team can see notes." });
                   }}

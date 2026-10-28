@@ -6,6 +6,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Avatar, Button, useToast } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { formatCurrency } from "@/lib/format";
+import { LIVE } from "@/lib/live/config";
+import { liveWidget, type WidgetMessage } from "@/lib/live/widget";
 import { business } from "@/lib/mock/public";
 import { MockQr } from "./payment-methods";
 
@@ -23,6 +25,8 @@ type Card =
 interface Msg {
   id: number;
   from: "ai" | "user" | "human" | "system";
+  /** Display name for team replies (live mode). */
+  name?: string;
   text?: string;
   card?: Card;
   time: string;
@@ -141,7 +145,10 @@ export function WebchatWidget({
   launcher = true,
   greetingDelay = 2500,
   bookingHref = `/book/${business.slug}`,
+  orgSlug = process.env.NEXT_PUBLIC_WIDGET_ORG_SLUG || business.slug,
 }: {
+  /** Workspace the chat belongs to (live mode). */
+  orgSlug?: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   /** show the floating bubble (hide it when the page has its own "Chat with us" button) */
@@ -163,7 +170,7 @@ export function WebchatWidget({
 
   const [greeting, setGreeting] = useState(false);
   const [unread, setUnread] = useState(0);
-  const [messages, setMessages] = useState<Msg[]>([{ id: 1, from: "ai", text: GREETING, time: "11:20 AM" }]);
+  const [messages, setMessages] = useState<Msg[]>([{ id: 1, from: "ai", text: GREETING, time: LIVE ? "Just now" : "11:20 AM" }]);
   const [typing, setTyping] = useState<null | "ai" | "human">(null);
   const [draft, setDraft] = useState("");
   const [usedChips, setUsedChips] = useState<string[]>([]);
@@ -204,7 +211,7 @@ export function WebchatWidget({
 
   const push = useCallback((m: Omit<Msg, "id" | "time">) => {
     const id = nextId.current++;
-    const time = stamp(clock.current);
+    const time = LIVE ? new Date().toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : stamp(clock.current);
     setMessages((prev) => [...prev, { ...m, id, time }]);
   }, []);
 
@@ -229,13 +236,67 @@ export function WebchatWidget({
     [push],
   );
 
+  // Live mode: messages go to the workspace inbox; replies (AI or team) are polled while the panel is open.
+  const seen = useRef(new Set<string>());
+  const pending = useRef<string[]>([]); // sent this session, shown before the server echoes them back
+  const waitingSince = useRef<number | null>(null);
+  const showLive = useCallback(
+    (list: WidgetMessage[]) => {
+      for (const m of list) {
+        if (seen.current.has(m.id)) continue;
+        seen.current.add(m.id);
+        if (m.author === "visitor") {
+          const i = pending.current.indexOf(m.body);
+          if (i >= 0) pending.current.splice(i, 1);
+          else push({ from: "user", text: m.body }); // earlier messages, e.g. after a page reload
+          continue;
+        }
+        push({ from: m.author, name: m.authorName ?? undefined, text: m.body });
+        if (m.author !== "system") {
+          waitingSince.current = null;
+          setTyping(null);
+        }
+      }
+    },
+    [push],
+  );
+  useEffect(() => {
+    if (!LIVE || !open) return;
+    const chat = liveWidget(orgSlug);
+    let stopped = false;
+    const tick = () => {
+      if (!chat.hasSession()) return;
+      chat.poll().then((list) => !stopped && showLive(list), () => {});
+      if (waitingSince.current && Date.now() - waitingSince.current > 90_000) setTyping(null);
+    };
+    tick();
+    const t = window.setInterval(tick, 2500);
+    return () => {
+      stopped = true;
+      window.clearInterval(t);
+    };
+  }, [open, orgSlug, showLive]);
+
   const send = (text: string) => {
     const value = text.trim();
     if (!value || busy) return;
     clock.current += 1;
     push({ from: "user", text: value });
     setDraft("");
-    run(script(value));
+    if (!LIVE) {
+      run(script(value));
+      return;
+    }
+    setTyping("ai");
+    waitingSince.current = Date.now();
+    pending.current.push(value);
+    liveWidget(orgSlug)
+      .send(value)
+      .then((m) => seen.current.add(m.id))
+      .catch(() => {
+        setTyping(null);
+        push({ from: "system", text: "Message not delivered. Check your connection and try again." });
+      });
   };
 
   const openPanel = () => {
@@ -472,12 +533,24 @@ function MessageRow({
   }
   return (
     <div className="flex items-end gap-2">
-      {m.from === "human" ? <Avatar name="Arjun Patil" size="xs" /> : <Avatar name="Anvi" ai size="xs" />}
+      {m.from === "human" ? <Avatar name={m.name ?? "Arjun Patil"} size="xs" /> : <Avatar name="Anvi" ai size="xs" />}
       <div className="max-w-[85%] min-w-0 space-y-1.5">
-        {m.text && <div className="rounded-2xl rounded-bl-md border border-line bg-surface px-3 py-2 text-sm whitespace-pre-line text-fg">{m.text}</div>}
+        {m.text && (
+          <div className="rounded-2xl rounded-bl-md border border-line bg-surface px-3 py-2 text-sm break-words whitespace-pre-line text-fg">
+            {m.text.split(/(https?:\/\/\S+)/g).map((part, i) =>
+              /^https?:\/\//.test(part) ? (
+                <a key={i} href={part} target="_blank" rel="noreferrer" className="text-primary underline">
+                  {part}
+                </a>
+              ) : (
+                part
+              ),
+            )}
+          </div>
+        )}
         {m.card && <ChatCard card={m.card} onPick={(slot) => onPick(m.id, slot)} bookingHref={bookingHref} onWhatsApp={onWhatsApp} />}
         <div className="text-[10px] text-muted">
-          {m.from === "human" ? "Arjun · Front desk" : "Anvi · AI"} · {m.time}
+          {m.from === "human" ? (m.name ? `${m.name.split(" ")[0]} · Team` : "Arjun · Front desk") : "Anvi · AI"} · {m.time}
         </div>
       </div>
     </div>

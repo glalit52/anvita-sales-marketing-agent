@@ -1,8 +1,37 @@
 # Anvita Web
 
 The Anvita product UI. It is a clickable frontend for every module in
-[docs/02-feature-catalog.md](../../docs/02-feature-catalog.md). There is no backend yet: all data is mock data in
-`src/lib/mock/`, and actions (sending, booking, AI streaming, drag & drop) are simulated in local state.
+[docs/02-feature-catalog.md](../../docs/02-feature-catalog.md). It runs in one of two modes:
+
+- **Demo mode** (default, and the GitHub Pages build): all data is mock data in `src/lib/mock/`, and actions
+  (sending, booking, AI streaming, drag & drop) are simulated in local state.
+- **Live mode**: set `NEXT_PUBLIC_API_URL` to an [Anvita API](https://github.com/glalit52/anvita-sales-marketing-agent-backend)
+  and the app signs in with email and password and reads and writes your real workspace.
+
+## Live mode
+
+```bash
+# terminal 1: the API (see the backend README), e.g. with its demo workspace seeded
+# terminal 2:
+cd apps/web
+NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
+# sign in as priya@smiledental.in / demo-password-123, or create a workspace
+```
+
+| Connected to the API | Still on demo data |
+|---|---|
+| Sign-in, sign-up, invites, sign-out | Pipeline, calendar, payments list |
+| Dashboard (KPIs, trend, escalations, today's tasks, AI activity) | AI Agent Studio, settings, integrations |
+| Inbox (live threads, replies, notes, assign, take over / hand back, close, AI suggest, approve AI drafts) | Prospecting, sequences, campaigns, marketing, reviews |
+| Contacts (list, add, edit, bulk tag, consent, notes, timeline, full profile) | Analytics, automations |
+| Tasks, notifications, top-bar bell and sidebar counters | Public booking page |
+| Webchat widget on `/site-demo` (set `NEXT_PUBLIC_WIDGET_ORG_SLUG` for another workspace) | |
+| Customer pay page `/pay/[token]` | |
+
+Modules that are still on demo data show a "not connected yet" card in live mode instead of mixing demo records
+into a real workspace. How it works: `src/lib/live/` holds the API client (token refresh), the session gate, and
+adapters that load API data into the same collections the screens already read, so each screen needs only small,
+mode-aware changes.
 
 ## Run it
 
